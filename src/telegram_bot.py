@@ -2,7 +2,8 @@ import os
 import sqlite3
 import logging
 from telegram import Bot
-from datetime import datetime
+from datetime import datetime, timedelta
+import time
 
 # Configuração do log
 logging.basicConfig(filename="data/logs.txt", level=logging.INFO, format="%(asctime)s - %(message)s")
@@ -87,7 +88,7 @@ def verificar_limites():
     
     return False
 
-# Envia um sinal de aposta para o grupo do Telegram
+# Envia um sinal de aposta para o grupo do Telegram com hora exata
 def enviar_sinal(cor, valor_aposta):
     global saldo_dia
 
@@ -95,12 +96,18 @@ def enviar_sinal(cor, valor_aposta):
         logging.info(f"Tentativa de envio de sinal bloqueada. Stop-win/loss atingido. (Saldo: R${saldo_dia:.2f})")
         return  # Evita enviar sinais se o limite foi atingido
 
+    # Calcula o horário do próximo sorteio, que ocorre a cada 30 segundos
+    now = datetime.now()
+    next_sorteio = (now + timedelta(seconds=30 - now.second % 30))  # Próximo múltiplo de 30 segundos
+    horario_entrada = next_sorteio.strftime("%H:%M:%S")  # Formato HH:MM:SS
+
     mensagem = f"🎯 Sinal de Aposta: Apostar no **{cor.upper()}** 💰\n"
     mensagem += f"💵 Valor: R${valor_aposta:.2f}\n"
+    mensagem += f"🕒 Hora da entrada: {horario_entrada}\n"
     mensagem += f"📊 Saldo do dia: R${saldo_dia:.2f}"
 
     bot.send_message(chat_id=CHAT_ID, text=mensagem)
-    logging.info(f"Enviado sinal: {cor} - R${valor_aposta:.2f}")
+    logging.info(f"Enviado sinal: {cor} - R${valor_aposta:.2f} - Hora da entrada: {horario_entrada}")
 
 # Registra o resultado da aposta e atualiza o saldo
 def registrar_resultado(resultado):

@@ -8,14 +8,14 @@ def obter_ultimos_resultados(limite=100):
     """Obtém os últimos resultados do banco de dados."""
     conn = sqlite3.connect('data/blaze_double.db')
     cursor = conn.cursor()
-    cursor.execute(f"SELECT numero, cor FROM resultados ORDER BY timestamp DESC LIMIT {limite}")
+    cursor.execute(f"SELECT numero, cor FROM resultados ORDER BY created_at DESC LIMIT {limite}")
     dados = cursor.fetchall()
     conn.close()
-    
+
     if not dados:
         logging.warning("Nenhum resultado encontrado no banco de dados.")
         return []
-    
+
     return [(res[0], res[1]) for res in dados]  # Retorna lista de tuplas (numero, cor)
 
 def analisar_padroes(limite=100):
@@ -26,17 +26,20 @@ def analisar_padroes(limite=100):
         return None, None, None
 
     total = len(resultados)
+    if total == 0:
+        return None, None, None
+
     contagem_cores = {"red": 0, "black": 0, "white": 0}
 
     for _, cor in resultados:
-        contagem_cores[cor] += 1
+        contagem_cores[cor] = contagem_cores.get(cor, 0) + 1
 
     prob_red = contagem_cores["red"] / total
     prob_black = contagem_cores["black"] / total
     prob_white = contagem_cores["white"] / total
 
     logging.info(f"Probabilidades (Últimos {limite} jogos): Vermelho {prob_red:.2%}, Preto {prob_black:.2%}, Branco {prob_white:.2%}")
-    
+
     return prob_red, prob_black, prob_white
 
 def calcular_aposta(banca, probabilidade, odds):
@@ -44,8 +47,8 @@ def calcular_aposta(banca, probabilidade, odds):
     kelly_fraction = (probabilidade * odds - (1 - probabilidade)) / odds
     valor_aposta = banca * kelly_fraction
 
-    # Nunca apostar mais que 5% da banca por segurança
-    return max(1, min(valor_aposta, banca * 0.05))
+    # Nunca apostar mais que 5% da banca por segurança e evitar valores negativos
+    return max(1, min(banca * 0.05, max(0, valor_aposta)))
 
 def melhor_aposta(banca, limite=100):
     """Define a melhor aposta com base nas probabilidades analisadas."""
