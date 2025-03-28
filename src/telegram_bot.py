@@ -18,8 +18,12 @@ from config.config import TOKEN, CHAT_ID
 db_path = os.path.join(os.path.dirname(__file__), 'dist', 'data', 'blaze_double.db')
 
 # Configuração de Logs
-log_path = os.path.join(os.path.dirname(__file__), 'logs.txt')
+log_path = os.path.join(os.path.dirname(__file__), 'dist', 'data', 'logs.txt')
 os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+saldo_dia = 0
+apostas_realizadas = 0
+usuario_logado = None
 
 logging.basicConfig(filename=log_path, level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -77,6 +81,7 @@ def criar_tabelas():
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        # Criação da tabela 'apostas'
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS apostas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,59 +90,187 @@ def criar_tabelas():
                 resultado TEXT
             )
         """)
+        # Criação da tabela 'usuarios'
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                senha TEXT NOT NULL,
+                banca REAL NOT NULL,
+                data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+                data_ultima_edicao DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         conn.commit()
         conn.close()
-        logging.info("Banco de dados verificado com sucesso.")
+        logging.info("Tabelas verificadas ou criadas com sucesso.")
     except Exception as e:
-        logging.error(f"Erro ao criar/verificar banco de dados: {e}")
+        logging.error(f"Erro ao criar/verificar tabelas: {e}")
+
+def cadastrar_usuario(nome, senha, banca):
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO usuarios (nome, senha, banca) 
+            VALUES (?, ?, ?)
+        """, (nome, senha, banca))
+        conn.commit()
+        conn.close()
+        logging.info("Usuário cadastrado com sucesso!")
+        return "Cadastro realizado com sucesso!"
+    except Exception as e:
+        logging.error(f"Erro ao cadastrar usuário: {e}")
+        return "Erro ao cadastrar usuário."
+    
+def atualizar_banca(nome, senha, nova_banca):
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Verifica se o nome e senha correspondem ao registro
+        cursor.execute("""
+            SELECT * FROM usuarios WHERE nome = ? AND senha = ?
+        """, (nome, senha))
+        usuario = cursor.fetchone()
+
+        if not usuario:
+            conn.close()
+            return "Nome ou senha incorretos. Atualização não realizada."
+
+        # Atualiza o valor da banca
+        cursor.execute("""
+            UPDATE usuarios
+            SET banca = ?, data_ultima_edicao = CURRENT_TIMESTAMP
+            WHERE nome = ? AND senha = ?
+        """, (nova_banca, nome, senha))
+        conn.commit()
+        conn.close()
+        logging.info(f"Banca do usuário {nome} atualizada para R${nova_banca:.2f}")
+        return "Banca atualizada com sucesso!"
+    except Exception as e:
+        logging.error(f"Erro ao atualizar banca: {e}")
+        return "Erro ao atualizar banca."
+    
+def obter_banca_atual(nome, senha):
+    """Busca o valor atual da banca do usuário com base no nome e senha."""
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Localiza o usuário pelo nome e senha
+        cursor.execute("""
+            SELECT banca FROM usuarios WHERE nome = ? AND senha = ?
+        """, (nome, senha))
+        usuario = cursor.fetchone()
+        conn.close()
+
+        if usuario:
+            return usuario[0]  # Retorna o valor da banca
+        else:
+            logging.warning("Usuário não encontrado ou credenciais inválidas.")
+            return None
+    except Exception as e:
+        logging.error(f"Erro ao obter a banca atual: {e}")
+        return None
+    
+def exibir_dados_usuario(nome, senha):
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM usuarios WHERE nome = ? AND senha = ?
+        """, (nome, senha))
+        usuario = cursor.fetchone()
+        conn.close()
+        if usuario:
+            return {
+                "id": usuario[0],
+                "nome": usuario[1],
+                "banca": usuario[3],
+                "data_criacao": usuario[4],
+                "data_ultima_edicao": usuario[5]
+            }
+        else:
+            return "Usuário não encontrado ou senha incorreta."
+    except Exception as e:
+        logging.error(f"Erro ao exibir dados do usuário: {e}")
+        return "Erro ao buscar dados do usuário."
 
 def obter_saldo_do_dia():
     """Retorna o saldo acumulado de apostas para o dia de hoje."""
     global saldo_dia
     try:
+        # Conectar ao banco de dados
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+
+        # Obter a soma dos resultados para o dia de hoje
         hoje = datetime.now().strftime("%Y-%m-%d")
         cursor.execute("SELECT SUM(resultado) FROM apostas WHERE data = ?", (hoje,))
         resultado = cursor.fetchone()
         conn.close()
+
+        # Atualizar o saldo diário global
         saldo_dia = resultado[0] if resultado[0] is not None else 0
+        logging.info(f"Saldo do dia atualizado: R${saldo_dia:.2f}")
         return saldo_dia
+
     except Exception as e:
         logging.error(f"Erro ao obter saldo do dia: {e}")
         return 0
 
-def registrar_aposta(valor, resultado):
-    """Registra uma aposta no banco de dados e atualiza o saldo do dia."""
-    global saldo_dia, apostas_realizadas
-    try:
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        hoje = datetime.now().strftime("%Y-%m-%d")
-        cursor.execute("INSERT INTO apostas (data, valor, resultado) VALUES (?, ?, ?)", (hoje, valor, resultado))
-        conn.commit()
-        conn.close()
-        saldo_dia += resultado
-        apostas_realizadas += 1
-        verificar_limites()
-    except Exception as e:
-        logging.error(f"Erro ao registrar aposta: {e}")
-
-def verificar_limites():
-    """Verifica se os limites de Stop Win ou Stop Loss foram atingidos."""
+def obter_saldo_do_dia():
+    """Retorna o saldo acumulado de apostas para o dia de hoje."""
     global saldo_dia
     try:
+        # Conectar ao banco de dados
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Obter a soma dos resultados para o dia de hoje
+        hoje = datetime.now().strftime("%Y-%m-%d")
+        cursor.execute("SELECT SUM(resultado) FROM apostas WHERE data = ?", (hoje,))
+        resultado = cursor.fetchone()
+        conn.close()
+
+        # Atualizar o saldo diário global
+        saldo_dia = resultado[0] if resultado[0] is not None else 0
+        logging.info(f"Saldo do dia atualizado: R${saldo_dia:.2f}")
+        return saldo_dia
+
+    except Exception as e:
+        logging.error(f"Erro ao obter saldo do dia: {e}")
+        return 0
+
+def verificar_limites():
+    """Verifica se os limites de Stop Win ou Stop Loss foram atingidos e encerra apostas se necessário."""
+    global saldo_dia, usuario_logado
+    try:
+        # Verificar se há um usuário logado
+        if usuario_logado is None:
+            logging.warning("Tentativa de verificar limites sem usuário logado.")
+            return False
+
+        # Verificar limites de Stop Win e Stop Loss
         if saldo_dia >= STOP_WIN:
-            enviar_mensagem(f"🎉 Meta diária alcançada! Lucro de R${saldo_dia:.2f}. Encerrando as apostas por hoje! ✅")
+            enviar_mensagem(
+                f"🎉 Meta diária alcançada! Lucro de R${saldo_dia:.2f}. Encerrando as apostas por hoje! ✅"
+            )
             logging.info("STOP WIN atingido. Apostas encerradas.")
             return True
         elif saldo_dia <= STOP_LOSS:
-            enviar_mensagem(f"⚠️ Stop-loss atingido! Prejuízo de R${saldo_dia:.2f}. Parando as apostas. ❌")
+            enviar_mensagem(
+                f"⚠️ Stop-loss atingido! Prejuízo de R${saldo_dia:.2f}. Parando as apostas. ❌"
+            )
             logging.warning("STOP LOSS atingido. Apostas encerradas.")
             return True
+
+        # Limites não atingidos
+        return False
     except Exception as e:
         logging.error(f"Erro ao verificar limites: {e}")
-    return False
+        return False
 
 def obter_resultado_do_jogo(horario_entrada):
     """Busca o resultado baseado na hora de entrada registrada no banco."""
@@ -159,41 +292,70 @@ def obter_resultado_do_jogo(horario_entrada):
 
 # Função para registrar a aposta e verificar o resultado após a entrada
 async def registrar_aposta_e_verificar_resultado(cor, valor_aposta):
-    global saldo_dia, apostas_realizadas
+    global saldo_dia, apostas_realizadas, usuario_logado
     try:
-        horario_entrada = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # Hora atual precisa
+        # Verificar se há um usuário logado
+        if usuario_logado is None:
+            await enviar_mensagem("❌ Você precisa fazer login para continuar. Use o comando /login Nome Senha.")
+            return
 
-        # Registrar aposta no banco com campo "pendente" para o resultado
+        # Obter as credenciais do usuário logado
+        nome_usuario = usuario_logado["nome"]
+        senha_usuario = usuario_logado["senha"]
+
+        # Definir o horário de entrada
+        horario_entrada = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Registrar a aposta no banco com status "pendente"
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO apostas (data, valor, resultado) VALUES (?, ?, ?)",
+        cursor.execute("INSERT INTO apostas (data, valor, resultado) VALUES (?, ?, ?)", 
                        (horario_entrada, valor_aposta, "pendente"))
         conn.commit()
         conn.close()
 
-        # Simular espera e buscar resultado
-        await asyncio.sleep(30)  # Tempo de espera antes de verificar o resultado
-        resultado = obter_resultado_do_jogo(horario_entrada)  # Nova função para buscar o resultado no banco
+        # Simular a espera para buscar o resultado
+        await asyncio.sleep(30)
+        resultado = obter_resultado_do_jogo(horario_entrada)  # Buscar o resultado da aposta
 
-        # Atualizar saldo e resultado no banco de dados
+        # Atualizar o resultado no banco de dados
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute("UPDATE apostas SET resultado = ? WHERE data = ?", (resultado, horario_entrada))
         conn.commit()
         conn.close()
 
-        # Atualizar saldo e enviar mensagem no Telegram
+        # Obter a banca atual antes de atualizar
+        banca_atual = obter_banca_atual(nome_usuario, senha_usuario)
+
+        if banca_atual is None:
+            logging.error("Não foi possível carregar a banca. Verifique seu cadastro.")
+            await enviar_mensagem("❌ Erro ao carregar a banca. Operação pausada!")
+            return
+
+        # Atualizar saldo e banca com base no resultado
         if resultado == "win":
             saldo_dia += valor_aposta
+            nova_banca = banca_atual + valor_aposta
             logging.info(f"Aposta WIN! Lucro de R${valor_aposta:.2f}.")
         elif resultado == "loss":
             saldo_dia -= valor_aposta
+            nova_banca = banca_atual - valor_aposta
             logging.info(f"Aposta LOSS! Prejuízo de R${valor_aposta:.2f}.")
+        else:
+            logging.warning("Resultado pendente ou erro. Nenhuma atualização realizada.")
+            return
 
+        # Atualizar a banca no banco de dados
+        atualizar_banca(nome_usuario, senha_usuario, nova_banca)
+
+        # Enviar mensagem no Telegram com o resultado
         await enviar_mensagem(f"🎯 Resultado da aposta: {resultado.upper()} 💰\n"
                                f"Valor apostado: R${valor_aposta:.2f}\n"
-                               f"Saldo do dia: R${saldo_dia:.2f}")
+                               f"Saldo do dia: R${saldo_dia:.2f}\n"
+                               f"Nova banca: R${nova_banca:.2f}")
 
+        # Incrementar número de apostas realizadas e verificar limites
         apostas_realizadas += 1
         verificar_limites()
 
@@ -202,34 +364,120 @@ async def registrar_aposta_e_verificar_resultado(cor, valor_aposta):
 
 # Função para obter o resultado da aposta no banco de dados baseado na hora de entrada
 def obter_resultado_por_hora(horario_entrada):
-    """Verifica se a aposta foi win ou loss com base no horário de entrada registrado no banco de dados"""
+    """Verifica se a aposta foi win ou loss com base no horário de entrada registrado no banco de dados."""
     try:
+        # Conectar ao banco de dados
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+
+        # Buscar o resultado da aposta com base no horário de entrada
         cursor.execute("SELECT resultado FROM apostas WHERE data = ?", (horario_entrada,))
         resultado = cursor.fetchone()
         conn.close()
+
+        # Processar o resultado retornado
         if resultado:
             return resultado[0]  # Retorna 'win' ou 'loss'
         else:
-            logging.warning(f"Nenhum resultado encontrado para o horário de entrada {horario_entrada}")
+            logging.warning(f"Nenhum resultado encontrado para o horário de entrada: {horario_entrada}")
             return "pendente"
+
     except Exception as e:
         logging.error(f"Erro ao buscar resultado da aposta: {e}")
         return "erro"
+    
+def cadastrar_usuario(nome, senha, banca):
+    """Registra um usuário no banco de dados."""
+    try:
+        if not nome or not senha:
+            logging.warning("Nome ou senha não fornecidos. Operação abortada.")
+            return "❌ Nome ou senha não podem estar vazios."
+
+        if banca <= 0:
+            logging.warning("Valor da banca inválido. Operação abortada.")
+            return "❌ O valor da banca deve ser maior que 0."
+
+        # Conectar ao banco de dados
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Inserir o usuário na tabela
+        cursor.execute("""
+            INSERT INTO usuarios (nome, senha, banca)
+            VALUES (?, ?, ?)
+        """, (nome, senha, banca))
+        conn.commit()
+        conn.close()
+
+        logging.info(f"Usuário cadastrado com sucesso: Nome={nome}, Banca=R${banca:.2f}")
+        return "✅ Cadastro realizado com sucesso!"
+    except sqlite3.IntegrityError:
+        logging.error(f"Erro de integridade ao cadastrar usuário: Nome={nome}.")
+        return "❌ Usuário já existe ou dados inválidos."
+    except Exception as e:
+        logging.error(f"Erro ao cadastrar usuário: {e}")
+        return "❌ Ocorreu um erro inesperado ao cadastrar o usuário."
+
+def login_usuario(update, context):
+    global usuario_logado
+    try:
+        dados = context.args
+        if len(dados) != 2:
+            update.message.reply_text(
+                "❌ Formato inválido! Use: /login Nome Senha\n"
+                "Exemplo: /login pedro 1415"
+            )
+            return
+
+        nome, senha = dados[0], dados[1]
+        banca_atual = obter_banca_atual(nome, senha)
+
+        if banca_atual is not None:
+            usuario_logado = {"nome": nome, "senha": senha}
+            update.message.reply_text(f"✅ Login realizado com sucesso!\n📊 Banca atual: R${banca_atual:.2f}")
+        else:
+            update.message.reply_text("❌ Nome ou senha inválidos. Tente novamente.")
+    except Exception as e:
+        logging.error(f"Erro no login: {e}")
+        update.message.reply_text("❌ Erro ao fazer login.")
 
 # Função para enviar o sinal de aposta via Telegram
 async def enviar_sinal():
-    global saldo_dia
+    global saldo_dia, usuario_logado
     try:
-        if verificar_limites():
-            logging.info("Tentativa de envio de sinal bloqueada devido a stop-win, stop-loss ou número máximo de apostas.")
+        # Verificar se há um usuário logado
+        if usuario_logado is None:
+            await enviar_mensagem("❌ Você precisa fazer login para continuar. Use o comando /login Nome Senha.")
             return
 
-        cor, valor_aposta = gerar_sinal_aposta()  # Chama a função de análise para gerar o sinal
+        # Obter informações do usuário logado
+        nome_usuario = usuario_logado["nome"]
+        senha_usuario = usuario_logado["senha"]
+        banca_atual = obter_banca_atual(nome_usuario, senha_usuario)
+
+        # Verificar se a banca está configurada
+        if banca_atual is None:
+            logging.error("Banca não encontrada. Operações pausadas.")
+            await enviar_mensagem(
+                "❌ Banca não encontrada! Use o comando /registrar para criar uma conta com sua banca inicial:\n"
+                "Exemplo: /registrar pedro 1415 100.00"
+            )
+            return
+
+        # Verificar limites antes de continuar
+        if verificar_limites():
+            logging.info("Tentativa de envio de sinal bloqueada devido a stop-win ou stop-loss.")
+            return
+
+        # Calcular o valor da aposta como uma porcentagem da banca
+        percentual_aposta = 0.02  # 2% da banca
+        valor_aposta = banca_atual * percentual_aposta
+
+        # Obter o sinal de aposta
+        cor, _ = gerar_sinal_aposta()  # Função para análise e geração do sinal
         horario_entrada = datetime.now().strftime("%H:%M:%S")  # Hora do próximo sorteio
 
-        # Mensagem para aposta futura
+        # Criar e enviar mensagem sobre o sinal
         mensagem = (
             f"🎯 Sinal de Aposta: Apostar no **{cor.upper()}** 💰\n"
             f"💵 Valor: R${valor_aposta:.2f}\n"
@@ -240,7 +488,7 @@ async def enviar_sinal():
         await enviar_mensagem(mensagem)
         logging.info(f"Sinal enviado: {cor} - R${valor_aposta:.2f} - Hora: {horario_entrada}")
 
-        # Registrar aposta e verificar resultado
+        # Registrar aposta no banco de dados e verificar o resultado
         await registrar_aposta_e_verificar_resultado(cor, valor_aposta)
 
     except Exception as e:
@@ -259,14 +507,26 @@ async def enviar_mensagem(texto):
 
 # Função principal para rodar o bot continuamente
 async def run_bot():
+    global usuario_logado  # Garantir que estamos usando a variável global
     try:
+        # Criar tabelas necessárias no banco de dados
         criar_tabelas()
-        await enviar_mensagem("✅ Bot iniciado com sucesso! Verificando conexões...")
 
+        # Enviar mensagem inicial ao Telegram pedindo login ou registro
+        await enviar_mensagem(
+            "👋 Bem-vindo ao bot de apostas!\n"
+            "Para começar, faça login ou registre-se:\n\n"
+            "1️⃣ Use **/login Nome Senha** para acessar sua conta.\n"
+            "2️⃣ Use **/registrar Nome Senha BancaInicial** para criar uma nova conta."
+        )
+
+        # Iniciar o loop contínuo para envio de sinais
         while True:
-            await enviar_sinal()  # Envia o sinal com base na análise
-            await asyncio.sleep(60)  # Espera antes de verificar novamente
-
+            if usuario_logado:
+                await enviar_sinal()  # Envia o sinal apenas se o usuário estiver logado
+            else:
+                logging.info("Aguardando login do usuário antes de enviar sinais.")
+                await asyncio.sleep(30)  # Intervalo para verificar novamente
     except Exception as e:
         logging.error(f"Erro ao rodar o bot: {e}")
 
