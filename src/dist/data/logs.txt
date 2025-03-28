@@ -198,3 +198,10 @@ Para começar, faça login ou registre-se:
 2025-03-28 16:50:39,326 - INFO - Aguardando login do usuário antes de enviar sinais.
 2025-03-28 16:51:09,336 - INFO - Aguardando login do usuário antes de enviar sinais.
 2025-03-28 16:51:39,337 - INFO - Aguardando login do usuário antes de enviar sinais.
+2025-03-28 16:52:09,342 - INFO - Aguardando login do usuário antes de enviar sinais.
+2025-03-28 16:52:39,351 - INFO - Aguardando login do usuário antes de enviar sinais.
+2025-03-28 16:53:09,362 - INFO - Aguardando login do usuário antes de enviar sinais.
+2025-03-28 16:53:39,363 - INFO - Aguardando login do usuário antes de enviar sinais.
+2025-03-28 16:54:09,365 - INFO - Aguardando login do usuário antes de enviar sinais.
+2025-03-28 16:54:39,376 - INFO - Aguardando login do usuário antes de enviar sinais.
+2025-03-28 16:55:09,379 - INFO - Aguardando login do usuário antes de enviar sinais.
